@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:dollar_bills/models/movement_model.dart';
+import 'package:dollar_bills/pages/shared/theme/app_icons.dart';
 import 'package:dollar_bills/pages/shared/theme/hex_color.dart';
 import 'package:dollar_bills/pages/shared/widgets/custom_card.dart';
 
@@ -57,7 +58,7 @@ class MovementCard extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                IconData(movement.iconCodePoint, fontFamily: 'MaterialIcons'),
+                AppIcons.getIcon(movement.iconCodePoint),
                 color: movementColor,
                 size: 22,
               ),

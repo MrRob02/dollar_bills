@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:dollar_bills/models/category_model.dart';
+import 'package:dollar_bills/pages/shared/theme/app_icons.dart';
 import 'package:dollar_bills/pages/shared/theme/hex_color.dart';
 
 class AddCategoryDialog extends StatefulWidget {
@@ -150,7 +151,7 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
-                          IconData(code, fontFamily: 'MaterialIcons'),
+                          AppIcons.getIcon(code),
                           color:
                               isSelected ? Colors.white : HexColor.textSecondary,
                           size: 20,

@@ -7,6 +7,7 @@ import 'package:dollar_bills/pages/accounts/accounts_node.dart';
 import 'package:dollar_bills/pages/accounts/add_account_dialog.dart';
 import 'package:dollar_bills/pages/accounts/add_category_dialog.dart';
 import 'package:dollar_bills/pages/shared/dialogs/app_snackbar.dart';
+import 'package:dollar_bills/pages/shared/theme/app_icons.dart';
 import 'package:dollar_bills/pages/shared/theme/hex_color.dart';
 import 'package:dollar_bills/pages/shared/widgets/custom_card.dart';
 import 'package:dollar_bills/pages/shared/widgets/custom_scaffold.dart';
@@ -420,10 +421,7 @@ class _AccountsPageState extends State<AccountsPage>
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      IconData(
-                        account.iconCodePoint,
-                        fontFamily: 'MaterialIcons',
-                      ),
+                      AppIcons.getIcon(account.iconCodePoint),
                       color: HexColor(account.colorHex),
                       size: 22,
                     ),
@@ -528,7 +526,7 @@ class _AccountsPageState extends State<AccountsPage>
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    IconData(cat.iconCodePoint, fontFamily: 'MaterialIcons'),
+                    AppIcons.getIcon(cat.iconCodePoint),
                     color: HexColor(cat.colorHex),
                     size: 20,
                   ),

@@ -217,7 +217,6 @@ void main() {
     });
 
     test('Monthly balance matches Real balance plus net income/expense sumatoria', () {
-      const realBalance = 21158.00;
       const monthIncome = 10250.00;
       const monthExpenses = 20138.77;
       const netSum = monthIncome - monthExpenses;

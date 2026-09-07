@@ -3,6 +3,7 @@ import 'package:gap/gap.dart';
 import 'package:dollar_bills/models/account_model.dart';
 import 'package:dollar_bills/models/category_model.dart';
 import 'package:dollar_bills/pages/accounts/add_category_dialog.dart';
+import 'package:dollar_bills/pages/shared/theme/app_icons.dart';
 import 'package:dollar_bills/pages/shared/theme/hex_color.dart';
 
 class AddAccountDialog extends StatefulWidget {
@@ -371,7 +372,7 @@ class _AddAccountDialogState extends State<AddAccountDialog> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(
-                            IconData(code, fontFamily: 'MaterialIcons'),
+                            AppIcons.getIcon(code),
                             color: isSelected ? Colors.white : HexColor.textSecondary,
                             size: 18,
                           ),

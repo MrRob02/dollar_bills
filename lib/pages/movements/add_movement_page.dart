@@ -5,6 +5,7 @@ import 'package:dollar_bills/models/account_model.dart';
 import 'package:dollar_bills/models/movement_model.dart';
 import 'package:dollar_bills/pages/movements/widgets/recurring_scope_dialog.dart';
 import 'package:dollar_bills/pages/shared/dialogs/app_snackbar.dart';
+import 'package:dollar_bills/pages/shared/theme/app_icons.dart';
 import 'package:dollar_bills/pages/shared/theme/hex_color.dart';
 import 'package:dollar_bills/pages/shared/widgets/custom_scaffold.dart';
 import 'package:dollar_bills/services/accounts_service.dart';
@@ -818,7 +819,7 @@ class _AddMovementPageState extends State<AddMovementPage> {
                           ),
                         ),
                         child: Icon(
-                          IconData(code, fontFamily: 'MaterialIcons'),
+                          AppIcons.getIcon(code),
                           color: isSelected ? Colors.white : HexColor.textSecondary,
                           size: 22,
                         ),
