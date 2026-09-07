@@ -1,5 +1,7 @@
 # Dollar Bills 💵
 
+**VIBECODED**
+
 **Dollar Bills** is an offline-first personal finance management application built with **Flutter**, utilizing the **Trinity** reactive state management architecture and **Hive CE** for ultra-fast local persistence.
 
 The app features an infinite calendar feed that centralizes scheduled and recurring financial movements, projects future monthly balances without double-counting, and tracks debts and debtor accounts with real-time automatic reconciliation.

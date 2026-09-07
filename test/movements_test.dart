@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dollar_bills/models/movement_model.dart';
 import 'package:dollar_bills/models/account_model.dart';
 import 'package:dollar_bills/models/category_model.dart';
+import 'package:dollar_bills/pages/movements/movements_node.dart';
 
 void main() {
   group('MovementModel tests', () {
@@ -511,6 +512,307 @@ void main() {
       expect(newProgram.matchesDate(DateTime(2026, 10, 10)), isTrue);
       expect(newProgram.occurrenceForDate(DateTime(2026, 10, 10)).amount, equals(149));
       expect(newProgram.occurrenceForDate(DateTime(2026, 11, 10)).amount, equals(149));
+    });
+  });
+
+  group('Monthly Balance exact calculation formula tests', () {
+    test('Calculates January balance: real balance + January net (previous months = 0)', () {
+      final node = MovementsNode();
+      node.movements.value = [
+        MovementModel(
+          id: 'jan_inc_1',
+          title: 'Sueldo Enero',
+          amount: 10000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 1, 15),
+        ),
+        MovementModel(
+          id: 'jan_exp_1',
+          title: 'Renta Enero',
+          amount: 3000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 1, 20),
+        ),
+      ];
+
+      const realBalance = 5000.0;
+      final targetMonth = DateTime(2026, 1);
+
+      // Previous months for January must be 0
+      final prevNet = node.calculatePreviousMonthsBalanceNet(targetMonth);
+      expect(prevNet, equals(0.0));
+
+      final janTotals = node.calculateMonthTotals(targetMonth, onlyAffectsBalance: true);
+      expect(janTotals.income, equals(10000.0));
+      expect(janTotals.expenses, equals(3000.0));
+      expect(janTotals.net, equals(7000.0));
+
+      // Balance = 5000 (real) + 7000 (mes actual) + 0 (meses prev) = 12000
+      final balance = node.calculateMonthlyBalance(
+        realBalance: realBalance,
+        targetMonth: targetMonth,
+      );
+      expect(balance, equals(12000.0));
+    });
+
+    test('Calculates March balance: real balance + March net + (Jan + Feb net of same year)', () {
+      final node = MovementsNode();
+      node.movements.value = [
+        // Enero: +10,000 - 4,000 = +6,000
+        MovementModel(
+          id: 'm_jan_1',
+          title: 'Sueldo Enero',
+          amount: 10000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 1, 15),
+        ),
+        MovementModel(
+          id: 'm_jan_2',
+          title: 'Gastos Enero',
+          amount: 4000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 1, 20),
+        ),
+        // Febrero: +10,000 - 7,000 = +3,000
+        MovementModel(
+          id: 'm_feb_1',
+          title: 'Sueldo Febrero',
+          amount: 10000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 2, 15),
+        ),
+        MovementModel(
+          id: 'm_feb_2',
+          title: 'Gastos Febrero',
+          amount: 7000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 2, 25),
+        ),
+        // Marzo: +12,000 - 5,000 = +7,000
+        MovementModel(
+          id: 'm_mar_1',
+          title: 'Sueldo Marzo',
+          amount: 12000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 3, 15),
+        ),
+        MovementModel(
+          id: 'm_mar_2',
+          title: 'Gastos Marzo',
+          amount: 5000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 3, 20),
+        ),
+      ];
+
+      const realBalance = 1500.0;
+      final targetMarch = DateTime(2026, 3);
+
+      // Previous months net (Jan + Feb): 6000 + 3000 = 9000
+      final prevNet = node.calculatePreviousMonthsBalanceNet(targetMarch);
+      expect(prevNet, equals(9000.0));
+
+      // March net: 12000 - 5000 = 7000
+      final marTotals = node.calculateMonthTotals(targetMarch, onlyAffectsBalance: true);
+      expect(marTotals.net, equals(7000.0));
+
+      // Balance = 1500 (real) + 7000 (marzo) + 9000 (ene+feb) = 17500
+      final balance = node.calculateMonthlyBalance(
+        realBalance: realBalance,
+        targetMonth: targetMarch,
+      );
+      expect(balance, equals(17500.0));
+    });
+
+    test('Excludes movements already contemplated in initial balance (affectsBalance = false) from balance calculation but includes them in screen totals', () {
+      final node = MovementsNode();
+      node.movements.value = [
+        // Movimiento normal que sí afecta el balance
+        MovementModel(
+          id: 'mov_afecta',
+          title: 'Ingreso Normal',
+          amount: 5000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 4, 10),
+          affectsBalance: true,
+        ),
+        // Movimiento que NO afecta el balance (ya contemplado en el saldo inicial)
+        MovementModel(
+          id: 'mov_contemplado',
+          title: 'Gasto ya contemplado en saldo inicial',
+          amount: 2000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 4, 12),
+          affectsBalance: false, // Apagado
+        ),
+      ];
+
+      final targetMonth = DateTime(2026, 4);
+
+      // Para la pantalla (onlyAffectsBalance: false), deben aparecer ambos:
+      final screenTotals = node.calculateMonthTotals(targetMonth, onlyAffectsBalance: false);
+      expect(screenTotals.income, equals(5000.0));
+      expect(screenTotals.expenses, equals(2000.0));
+      expect(screenTotals.net, equals(3000.0));
+
+      // Para el balance (onlyAffectsBalance: true), el gasto contemplado NO debe restarse:
+      final balanceTotals = node.calculateMonthTotals(targetMonth, onlyAffectsBalance: true);
+      expect(balanceTotals.income, equals(5000.0));
+      expect(balanceTotals.expenses, equals(0.0));
+      expect(balanceTotals.net, equals(5000.0));
+
+      // Balance al mes con saldo real 1000: 1000 + 5000 = 6000 (no 4000)
+      final balance = node.calculateMonthlyBalance(
+        realBalance: 1000.0,
+        targetMonth: targetMonth,
+      );
+      expect(balance, equals(6000.0));
+    });
+
+    test('Works seamlessly with recurring movements across months of same year', () {
+      final node = MovementsNode();
+      node.movements.value = [
+        // Mensual recurrente: +10,000 cada mes el día 15
+        MovementModel(
+          id: 'rec_sueldo',
+          title: 'Sueldo Mensual',
+          amount: 10000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 1, 15),
+          recurrenceType: RecurrenceType.monthly,
+        ),
+        // Mensual recurrente: -4,000 cada fin de mes
+        MovementModel(
+          id: 'rec_renta',
+          title: 'Renta Mensual',
+          amount: 4000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 1, 31),
+          recurrenceType: RecurrenceType.monthly,
+          isLastDayOfMonth: true,
+        ),
+      ];
+
+      const realBalance = 2000.0;
+      // Para Mayo 2026 (mes 5):
+      // Meses anteriores (Ene, Feb, Mar, Abr = 4 meses):
+      // Cada mes tiene +10000 - 4000 = +6000
+      // 4 meses * 6000 = +24000
+      final mayTarget = DateTime(2026, 5);
+      final prevNet = node.calculatePreviousMonthsBalanceNet(mayTarget);
+      expect(prevNet, equals(24000.0));
+
+      // Mayo: +10000 - 4000 = +6000
+      final mayTotals = node.calculateMonthTotals(mayTarget, onlyAffectsBalance: true);
+      expect(mayTotals.net, equals(6000.0));
+
+      // Balance al mes de Mayo = 2000 (real) + 6000 (mayo) + 24000 (ene-abr) = 32000
+      final balanceMay = node.calculateMonthlyBalance(
+        realBalance: realBalance,
+        targetMonth: mayTarget,
+      );
+      expect(balanceMay, equals(32000.0));
+    });
+
+    test('Subtracts liquidated movements of current month and previous months to avoid double counting with real balance', () {
+      final node = MovementsNode();
+      // Saldo real antes de liquidar era 10,000.
+      // Enero: Sueldo (+5000), Renta (-3000) -> ambos liquidados (+2000 al real)
+      // Febrero: Sueldo (+5000 liquidado, +5000 al real), Renta (-3000 PENDIENTE)
+      // Saldo real actual = 10,000 + 2,000 + 5,000 = 17,000.
+      node.movements.value = [
+        MovementModel(
+          id: 'jan_sueldo',
+          title: 'Sueldo Enero',
+          amount: 5000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 1, 15),
+          liquidationDate: DateTime(2026, 1, 15),
+        ),
+        MovementModel(
+          id: 'jan_renta',
+          title: 'Renta Enero',
+          amount: 3000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 1, 20),
+          liquidationDate: DateTime(2026, 1, 20),
+        ),
+        MovementModel(
+          id: 'feb_sueldo',
+          title: 'Sueldo Febrero',
+          amount: 5000,
+          type: MovementType.income,
+          iconCodePoint: 0xe518,
+          colorHex: 'FF3EB489',
+          scheduledDate: DateTime(2026, 2, 15),
+          liquidationDate: DateTime(2026, 2, 15),
+        ),
+        MovementModel(
+          id: 'feb_renta',
+          title: 'Renta Febrero',
+          amount: 3000,
+          type: MovementType.expense,
+          iconCodePoint: 0xe518,
+          colorHex: 'FFEF4444',
+          scheduledDate: DateTime(2026, 2, 20),
+          liquidationDate: null, // Pendiente
+        ),
+      ];
+
+      const currentRealBalance = 17000.0;
+      final targetFeb = DateTime(2026, 2);
+
+      // Enero net (meses anteriores): 5000 - 3000 = +2000
+      final prevNet = node.calculatePreviousMonthsBalanceNet(targetFeb);
+      expect(prevNet, equals(2000.0));
+
+      // Febrero net (mes actual): 5000 - 3000 = +2000
+      final febNet = node.calculateMonthTotals(targetFeb, onlyAffectsBalance: true).net;
+      expect(febNet, equals(2000.0));
+
+      // Liquidados hasta febrero inclusive:
+      // Jan: +5000 - 3000 = +2000
+      // Feb: +5000
+      // Total liquidados = +7000
+      final liquidatedNet = node.calculateLiquidatedNetUpToMonth(targetFeb);
+      expect(liquidatedNet, equals(7000.0));
+
+      // Balance mensual para Febrero:
+      // Real (17000) + prev (2000) + actual (2000) - liquidados (7000) = 14000.
+      // (Coincide con: Saldo base 10000 + Ene 2000 + Feb 2000 = 14000, sin duplicar!)
+      final balance = node.calculateMonthlyBalance(
+        realBalance: currentRealBalance,
+        targetMonth: targetFeb,
+      );
+      expect(balance, equals(14000.0));
     });
   });
 }

@@ -133,6 +133,112 @@ class MovementsNode extends NodeInterface {
     }
   }
 
+  /// Calcula los totales de un mes.
+  /// Si [onlyAffectsBalance] es true, excluye movimientos con affectsBalance == false
+  /// (es decir, movimientos que ya estaban contemplados en el balance inicial).
+  MonthTotals calculateMonthTotals(
+    DateTime month, {
+    bool onlyAffectsBalance = false,
+  }) {
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    double income = 0.0;
+    double expenses = 0.0;
+
+    for (int d = 1; d <= daysInMonth; d++) {
+      final dayDate = DateTime(month.year, month.month, d);
+      for (final p in movements.value) {
+        if (p.matchesDate(dayDate)) {
+          if (onlyAffectsBalance && !p.affectsMainBalance) {
+            continue;
+          }
+          if (p.isIncome) {
+            income += p.amount;
+          } else {
+            expenses += p.amount;
+          }
+        }
+      }
+    }
+
+    return MonthTotals(income: income, expenses: expenses);
+  }
+
+  /// Calcula la sumatoria neta de Ingresos/Egresos de los meses anteriores
+  /// de ese mismo año (desde Enero hasta month - 1).
+  /// Excluye movimientos ya contemplados en el balance inicial.
+  double calculatePreviousMonthsBalanceNet(DateTime month) {
+    if (month.month <= 1) return 0.0;
+
+    double net = 0.0;
+    for (int m = 1; m < month.month; m++) {
+      final mDate = DateTime(month.year, m);
+      final totals = calculateMonthTotals(mDate, onlyAffectsBalance: true);
+      net += totals.net;
+    }
+    return net;
+  }
+
+  /// Calcula la sumatoria neta (Ingresos - Gastos) de movimientos liquidados en un mes específico.
+  /// Solo toma en cuenta movimientos que afectan el balance (affectsMainBalance == true).
+  double calculateLiquidatedNetForMonth(DateTime month) {
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    double net = 0.0;
+
+    for (int d = 1; d <= daysInMonth; d++) {
+      final dayDate = DateTime(month.year, month.month, d);
+      for (final p in movements.value) {
+        if (p.matchesDate(dayDate) && p.affectsMainBalance) {
+          final occ = p.occurrenceForDate(dayDate);
+          if (occ.isLiquidated) {
+            if (occ.isIncome) {
+              net += occ.amount;
+            } else {
+              net -= occ.amount;
+            }
+          }
+        }
+      }
+    }
+    return net;
+  }
+
+  /// Calcula la sumatoria neta de movimientos liquidados desde enero hasta el mes especificado
+  /// (inclusive) de ese mismo año.
+  /// Solo toma en cuenta movimientos que afectan el balance (affectsMainBalance == true).
+  double calculateLiquidatedNetUpToMonth(DateTime month) {
+    double total = 0.0;
+    for (int m = 1; m <= month.month; m++) {
+      total += calculateLiquidatedNetForMonth(DateTime(month.year, m));
+    }
+    return total;
+  }
+
+  /// Calcula el balance al mes:
+  /// Saldo Real + Sumatoria Ingreso/Egreso de ese mes + Sumatoria Ingreso/Egreso de los meses anteriores de ese mismo año
+  /// menos los movimientos liquidados del mes actual y de todos los anteriores (para no duplicar con el saldo real).
+  /// No incluye saldo contemplado en la sumatoria de ingresos/egresos del balance.
+  double calculateMonthlyBalance({
+    required double realBalance,
+    required DateTime targetMonth,
+  }) {
+    final currentMonthNet = calculateMonthTotals(
+      targetMonth,
+      onlyAffectsBalance: true,
+    ).net;
+    final previousMonthsNet = calculatePreviousMonthsBalanceNet(targetMonth);
+    final liquidatedNet = calculateLiquidatedNetUpToMonth(targetMonth);
+
+    return realBalance + currentMonthNet + previousMonthsNet - liquidatedNet;
+  }
+
   @override
   ReadableMovementsNode get readable => ReadableMovementsNode(this);
+}
+
+class MonthTotals {
+  final double income;
+  final double expenses;
+  double get net => income - expenses;
+
+  const MonthTotals({this.income = 0.0, this.expenses = 0.0});
 }

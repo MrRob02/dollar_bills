@@ -28,6 +28,7 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
   final TextEditingController _searchController = TextEditingController();
   // Filter chips: 0 = Todos, 1 = Programados, 2 = Liquidados
   int _statusFilter = 0;
+  bool _isInitialDialogOpen = false;
 
   @override
   void dispose() {
@@ -41,24 +42,33 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
     bool isDone,
     double currentBalance,
   ) {
-    if (!isDone) {
+    if (!isDone && !_isInitialDialogOpen) {
+      _isInitialDialogOpen = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final result = await showDialog<double>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => InitialBalanceDialog(
-            currentBalance: currentBalance,
-            isFirstTime: true,
-          ),
-        );
-        if (result != null) {
-          await node.setInitialBalance(result);
-          if (context.mounted) {
-            AppSnackBarWith(context).show(
-              message: 'Balance inicial configurado correctamente',
-              type: CustomSnackBarType.success,
-            );
+        if (!context.mounted) {
+          _isInitialDialogOpen = false;
+          return;
+        }
+        try {
+          final result = await showDialog<double>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => InitialBalanceDialog(
+              currentBalance: currentBalance,
+              isFirstTime: true,
+            ),
+          );
+          if (result != null) {
+            await node.setInitialBalance(result);
+            if (context.mounted) {
+              AppSnackBarWith(context).show(
+                message: 'Balance inicial configurado correctamente',
+                type: CustomSnackBarType.success,
+              );
+            }
           }
+        } finally {
+          _isInitialDialogOpen = false;
         }
       });
     }
@@ -95,10 +105,8 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
   ]) async {
     final res = await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => AddMovementPage(
-          movementToEdit: movement,
-          occurrenceDate: date,
-        ),
+        builder: (_) =>
+            AddMovementPage(movementToEdit: movement, occurrenceDate: date),
       ),
     );
     if (res == true) {
@@ -145,6 +153,272 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
     if (confirmed == true) {
       await node.deleteMovement(movement.id);
     }
+  }
+
+  void _showBalanceBreakdownModal(
+    BuildContext context, {
+    required double realBalance,
+    required double previousMonthsNet,
+    required double currentMonthNet,
+    required double liquidatedNet,
+    required MonthTotals currentMonthBalanceTotals,
+    required double monthlyBalance,
+    required DateTime selectedMonth,
+    required VoidCallback onEditBalance,
+  }) {
+    final currency = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
+    final monthFormat = DateFormat('MMMM yyyy', 'es_MX');
+    final selMonthStr = monthFormat.format(selectedMonth);
+    final selMonthCapitalized = selMonthStr.isNotEmpty
+        ? '${selMonthStr[0].toUpperCase()}${selMonthStr.substring(1)}'
+        : '';
+
+    final isJan = selectedMonth.month == 1;
+    final prevPeriodLabel = isJan
+        ? 'No aplica (primer mes del año)'
+        : 'Ene - ${DateFormat('MMM', 'es_MX').format(DateTime(selectedMonth.year, selectedMonth.month - 1))} ${selectedMonth.year}';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Gap(16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Desglose del Balance',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: HexColor.textPrimary,
+                          ),
+                        ),
+                        const Gap(2),
+                        Text(
+                          'Balance al mes de $selMonthCapitalized',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: HexColor.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    color: HexColor.textSecondary,
+                  ),
+                ],
+              ),
+              const Gap(16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: HexColor.mintLight.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: HexColor.mintPrimary.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 18,
+                      color: HexColor.mintPrimaryDark,
+                    ),
+                    const Gap(10),
+                    Expanded(
+                      child: Text(
+                        'El balance al mes suma tu saldo real y los movimientos del año hasta este mes, descontando los liquidados para no duplicar con el saldo real.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: HexColor.mintPrimaryDark,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Gap(16),
+              _buildBreakdownItem(
+                icon: Icons.account_balance_wallet_rounded,
+                iconColor: HexColor.mintPrimary,
+                title: 'Saldo real',
+                subtitle: 'Saldo actual configurado en tu cuenta',
+                amount: realBalance,
+                trailingActionText: 'Ajustar',
+                onTrailingAction: () {
+                  Navigator.of(ctx).pop();
+                  onEditBalance();
+                },
+              ),
+              const Divider(height: 20),
+              _buildBreakdownItem(
+                icon: Icons.history_rounded,
+                iconColor: Colors.blueGrey,
+                title: 'Meses anteriores (${selectedMonth.year})',
+                subtitle: prevPeriodLabel,
+                amount: previousMonthsNet,
+                showSign: true,
+              ),
+              const Divider(height: 20),
+              _buildBreakdownItem(
+                icon: Icons.calendar_month_rounded,
+                iconColor: HexColor.mintPrimaryDark,
+                title: 'Mes seleccionado ($selMonthCapitalized)',
+                subtitle:
+                    'Ingresos (+${currency.format(currentMonthBalanceTotals.income)}) | Gastos (-${currency.format(currentMonthBalanceTotals.expenses)})',
+                amount: currentMonthNet,
+                showSign: true,
+              ),
+              const Divider(height: 20),
+              _buildBreakdownItem(
+                icon: Icons.check_circle_outline_rounded,
+                iconColor: Colors.teal,
+                title: 'Ya liquidados (en saldo real)',
+                subtitle: 'Descontados del mes y anteriores para no duplicar con saldo real',
+                amount: -liquidatedNet,
+                showSign: true,
+              ),
+              const Divider(height: 24, thickness: 1.5),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Balance al mes',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: HexColor.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    '${monthlyBalance >= 0 ? '+' : ''}${currency.format(monthlyBalance)}',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: monthlyBalance >= 0
+                          ? HexColor.textPrimary
+                          : HexColor.expenseRed,
+                    ),
+                  ),
+                ],
+              ),
+              const Gap(8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBreakdownItem({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required double amount,
+    bool showSign = false,
+    String? trailingActionText,
+    VoidCallback? onTrailingAction,
+  }) {
+    final currency = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
+    final formattedAmount = showSign && amount > 0
+        ? '+${currency.format(amount)}'
+        : currency.format(amount);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const Gap(12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: HexColor.textPrimary,
+                ),
+              ),
+              const Gap(2),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 11, color: HexColor.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        const Gap(8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              formattedAmount,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: amount < 0 ? HexColor.expenseRed : HexColor.textPrimary,
+              ),
+            ),
+            if (trailingActionText != null && onTrailingAction != null) ...[
+              const Gap(2),
+              InkWell(
+                onTap: onTrailingAction,
+                child: Text(
+                  trailingActionText,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: HexColor.mintPrimaryDark,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
   }
 
   Widget _buildMonthChangeLabel(DateTime date) {
@@ -281,94 +555,37 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
               node.fullScreenLoading,
             },
             builder: (context, readable) {
-              if (!readable.isInitialSetupDone) {
-                _checkInitialSetup(context, node, false, readable.balance);
-              }
-
               final selMonth = readable.selectedMonth;
 
-              // Calculate income & expenses for selected month dynamically across all programs
-              final daysInMonth =
-                  DateTime(selMonth.year, selMonth.month + 1, 0).day;
-              double monthIncome = 0.0;
-              double monthExpenses = 0.0;
-              for (int d = 1; d <= daysInMonth; d++) {
-                final dayDate = DateTime(selMonth.year, selMonth.month, d);
-                for (final p in readable.movements) {
-                  if (p.matchesDate(dayDate)) {
-                    if (p.isIncome) {
-                      monthIncome += p.amount;
-                    } else {
-                      monthExpenses += p.amount;
-                    }
-                  }
-                }
-              }
+              // Totales de la pantalla para el mes actual (incluye todos los movimientos programados)
+              final screenTotals = node.calculateMonthTotals(
+                selMonth,
+                onlyAffectsBalance: false,
+              );
+              final monthIncome = screenTotals.income;
+              final monthExpenses = screenTotals.expenses;
 
-              // Calculate projected balance up to the end of selected month
-              final now = DateTime.now();
-              final currentMonth = DateTime(now.year, now.month);
-              final targetMonth = DateTime(selMonth.year, selMonth.month);
+              // Totales para el cálculo del balance (excluye movimientos ya contemplados en el balance)
+              final monthBalanceTotals = node.calculateMonthTotals(
+                selMonth,
+                onlyAffectsBalance: true,
+              );
+              final monthBalanceNet = monthBalanceTotals.net;
+              final previousMonthsBalanceNet = node
+                  .calculatePreviousMonthsBalanceNet(selMonth);
+              final liquidatedUpToMonthNet = node
+                  .calculateLiquidatedNetUpToMonth(selMonth);
+              final realBalance = readable.balance;
+              final monthlyBalance =
+                  realBalance +
+                  previousMonthsBalanceNet +
+                  monthBalanceNet -
+                  liquidatedUpToMonthNet;
 
-              // Solo los movimientos PENDIENTES (sin liquidar) que afectan balance deben sumarse al saldo Real,
-              // ya que lo liquidado ya se encuentra reflejado en el saldo Real.
-              double calculatePendingNetForMonth(DateTime m) {
-                final totalDays = DateTime(m.year, m.month + 1, 0).day;
-                double pendingInc = 0.0;
-                double pendingExp = 0.0;
-                for (int d = 1; d <= totalDays; d++) {
-                  final dayDate = DateTime(m.year, m.month, d);
-                  for (final p in readable.movements) {
-                    if (p.matchesDate(dayDate) && p.affectsMainBalance) {
-                      final occ = p.occurrenceForDate(dayDate);
-                      if (!occ.isLiquidated) {
-                        if (occ.isIncome) {
-                          pendingInc += occ.amount;
-                        } else {
-                          pendingExp += occ.amount;
-                        }
-                      }
-                    }
-                  }
-                }
-                return pendingInc - pendingExp;
-              }
-
-              double projectedBalance = readable.balance;
-
-              if (targetMonth.isAtSameMomentAs(currentMonth)) {
-                // Mes actual: Saldo Real + movimientos pendientes por liquidar de este mes
-                projectedBalance += calculatePendingNetForMonth(currentMonth);
-              } else if (targetMonth.isAfter(currentMonth)) {
-                // Meses futuros: Saldo Real + pendientes del mes actual y de cada mes hasta el seleccionado
-                DateTime iter = currentMonth;
-                while (!iter.isAfter(targetMonth)) {
-                  projectedBalance += calculatePendingNetForMonth(iter);
-                  iter = DateTime(iter.year, iter.month + 1);
-                }
-              } else {
-                // Meses pasados: Saldo Real menos los movimientos liquidados que ocurrieron después de ese mes
-                double pastDiff = 0.0;
-                DateTime iter = DateTime(targetMonth.year, targetMonth.month + 1);
-                while (!iter.isAfter(currentMonth)) {
-                  final totalDays = DateTime(iter.year, iter.month + 1, 0).day;
-                  for (int d = 1; d <= totalDays; d++) {
-                    final dayDate = DateTime(iter.year, iter.month, d);
-                    for (final p in readable.movements) {
-                      if (p.matchesDate(dayDate) && p.affectsMainBalance) {
-                        final occ = p.occurrenceForDate(dayDate);
-                        if (occ.isLiquidated) {
-                          pastDiff += occ.isIncome ? occ.amount : -occ.amount;
-                        }
-                      }
-                    }
-                  }
-                  iter = DateTime(iter.year, iter.month + 1);
-                }
-                projectedBalance -= pastDiff;
-              }
-
-              final monthName = DateFormat('MMMM yyyy', 'es_MX').format(selMonth);
+              final monthName = DateFormat(
+                'MMMM yyyy',
+                'es_MX',
+              ).format(selMonth);
               final capitalizedMonth = monthName.isNotEmpty
                   ? '${monthName[0].toUpperCase()}${monthName.substring(1)}'
                   : '';
@@ -437,27 +654,56 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
-                                      child: Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              'Balance al mes de $capitalizedMonth',
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                                color: HexColor.textSecondary,
+                                      child: InkWell(
+                                        onTap: () => _showBalanceBreakdownModal(
+                                          context,
+                                          realBalance: realBalance,
+                                          previousMonthsNet:
+                                              previousMonthsBalanceNet,
+                                          currentMonthNet: monthBalanceNet,
+                                          liquidatedNet: liquidatedUpToMonthNet,
+                                          currentMonthBalanceTotals:
+                                              monthBalanceTotals,
+                                          monthlyBalance: monthlyBalance,
+                                          selectedMonth: selMonth,
+                                          onEditBalance: () =>
+                                              _openEditBalanceDialog(
+                                                context,
+                                                node,
+                                                readable.balance,
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 4,
                                           ),
-                                          const SizedBox(width: 2),
-                                          Icon(
-                                            Icons.keyboard_arrow_down_rounded,
-                                            size: 18,
-                                            color: HexColor.textSecondary,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  'Balance al mes de $capitalizedMonth',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        HexColor.textSecondary,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Icon(
+                                                Icons.info_outline_rounded,
+                                                size: 15,
+                                                color: HexColor.mintPrimaryDark,
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -475,14 +721,16 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: HexColor.mintLight,
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
-                                              Icons.account_balance_wallet_outlined,
+                                              Icons
+                                                  .account_balance_wallet_outlined,
                                               size: 13,
                                               color: HexColor.mintPrimaryDark,
                                             ),
@@ -492,8 +740,7 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.bold,
-                                                color:
-                                                    HexColor.mintPrimaryDark,
+                                                color: HexColor.mintPrimaryDark,
                                               ),
                                             ),
                                           ],
@@ -503,15 +750,63 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
                                   ],
                                 ),
                                 const Gap(4),
-                                Text(
-                                  '${projectedBalance >= 0 ? '+' : ''}${currency.format(projectedBalance)}',
-                                  style: TextStyle(
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w900,
-                                    color: projectedBalance >= 0
-                                        ? HexColor.textPrimary
-                                        : HexColor.expenseRed,
-                                    letterSpacing: -0.5,
+                                Row(
+                                  children: [
+                                    Text(
+                                      currency.format(monthlyBalance),
+                                      style: TextStyle(
+                                        fontSize: 32,
+                                        fontWeight: FontWeight.w900,
+                                        color: monthlyBalance >= 0
+                                            ? HexColor.textPrimary
+                                            : HexColor.expenseRed,
+                                        letterSpacing: -0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Gap(2),
+                                InkWell(
+                                  onTap: () => _showBalanceBreakdownModal(
+                                    context,
+                                    realBalance: realBalance,
+                                    previousMonthsNet: previousMonthsBalanceNet,
+                                    currentMonthNet: monthBalanceNet,
+                                    liquidatedNet: liquidatedUpToMonthNet,
+                                    currentMonthBalanceTotals:
+                                        monthBalanceTotals,
+                                    monthlyBalance: monthlyBalance,
+                                    selectedMonth: selMonth,
+                                    onEditBalance: () => _openEditBalanceDialog(
+                                      context,
+                                      node,
+                                      readable.balance,
+                                    ),
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 2,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Saldo real + Acumulado anual',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: HexColor.textSecondary,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          Icons.help_outline_rounded,
+                                          size: 12,
+                                          color: HexColor.mintPrimaryDark,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],
@@ -700,69 +995,79 @@ class _AllMovementsPageState extends State<AllMovementsPage> {
                             key: ValueKey(
                               'infinite_calendar_${readable.selectedMonth.year}_${readable.selectedMonth.month}',
                             ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final date = DateTime(
-                                  startDate.year,
-                                  startDate.month,
-                                  startDate.day + index,
-                                );
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final date = DateTime(
+                                startDate.year,
+                                startDate.month,
+                                startDate.day + index,
+                              );
 
-                                final isMonthChange = date.day == 1;
+                              final isMonthChange = date.day == 1;
 
-                                // Evaluar qué programaciones centralizadas corresponden a esta fecha
-                                final dayMovements = <MovementModel>[];
-                                for (final p in filteredPrograms) {
-                                  if (p.matchesDate(date)) {
-                                    final occ = p.occurrenceForDate(date);
-                                    if (_statusFilter == 1 && occ.isLiquidated) continue;
-                                    if (_statusFilter == 2 && !occ.isLiquidated) continue;
-                                    dayMovements.add(occ);
-                                  }
+                              // Evaluar qué programaciones centralizadas corresponden a esta fecha
+                              final dayMovements = <MovementModel>[];
+                              for (final p in filteredPrograms) {
+                                if (p.matchesDate(date)) {
+                                  final occ = p.occurrenceForDate(date);
+                                  if (_statusFilter == 1 && occ.isLiquidated)
+                                    continue;
+                                  if (_statusFilter == 2 && !occ.isLiquidated)
+                                    continue;
+                                  dayMovements.add(occ);
                                 }
+                              }
 
-                                final hasMovements = dayMovements.isNotEmpty;
+                              final hasMovements = dayMovements.isNotEmpty;
 
-                                // No tiene un pago programado ni cambio de mes? No mostrar nada
-                                if (!hasMovements && !isMonthChange) {
-                                  return const SizedBox.shrink();
-                                }
+                              // No tiene un pago programado ni cambio de mes? No mostrar nada
+                              if (!hasMovements && !isMonthChange) {
+                                return const SizedBox.shrink();
+                              }
 
-                                double dayNet = 0.0;
-                                for (final m in dayMovements) {
-                                  dayNet += m.isIncome ? m.amount : -m.amount;
-                                }
+                              double dayNet = 0.0;
+                              for (final m in dayMovements) {
+                                dayNet += m.isIncome ? m.amount : -m.amount;
+                              }
 
-                                return Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // Cambia de mes? Colocar una etiqueta que diga el mes que sigue
-                                    if (isMonthChange)
-                                      _buildMonthChangeLabel(date),
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Cambia de mes? Colocar una etiqueta que diga el mes que sigue
+                                  if (isMonthChange)
+                                    _buildMonthChangeLabel(date),
 
-                                    // Tiene un pago programado? Mostrar el pago
-                                    if (hasMovements) ...[
-                                      DayGroupHeader(
-                                        date: date,
-                                        netAmount: dayNet,
-                                      ),
-                                      for (final m in dayMovements)
-                                        MovementCard(
-                                          movement: m,
-                                          onToggleLiquidation: () =>
-                                              node.toggleLiquidation(m, date),
-                                          onEdit: () =>
-                                              _editMovement(context, node, m, date),
-                                          onDelete: () =>
-                                              _confirmDelete(context, node, m, date),
+                                  // Tiene un pago programado? Mostrar el pago
+                                  if (hasMovements) ...[
+                                    DayGroupHeader(
+                                      date: date,
+                                      netAmount: dayNet,
+                                    ),
+                                    for (final m in dayMovements)
+                                      MovementCard(
+                                        movement: m,
+                                        onToggleLiquidation: () =>
+                                            node.toggleLiquidation(m, date),
+                                        onEdit: () => _editMovement(
+                                          context,
+                                          node,
+                                          m,
+                                          date,
                                         ),
-                                    ],
+                                        onDelete: () => _confirmDelete(
+                                          context,
+                                          node,
+                                          m,
+                                          date,
+                                        ),
+                                      ),
                                   ],
-                                );
-                              },
-                            ),
+                                ],
+                              );
+                            }),
                           ),
                         const SliverToBoxAdapter(child: Gap(80)),
                       ],
